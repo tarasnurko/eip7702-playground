@@ -12,7 +12,15 @@ contract Multicall {
 
         for (uint256 i = 0; i < targets.length; i++) {
             (bool success, bytes memory returnData) = targets[i].call(data[i]);
-            require(success, "Call failed");
+            if (!success) {
+                if (returnData.length > 0) {
+                    assembly {
+                        revert(add(32, returnData), mload(returnData))
+                    }
+                } else {
+                    revert("Call failed");
+                }
+            }
             results[i] = returnData;
         }
     }
