@@ -83,12 +83,22 @@ contract EIP7702CounterTest is Test {
         // after removing delegation, EoA is just a regular EoA
         _assertIsEOA(alice);
 
-        // trying to call increment on alice should not change any state since it's no longer delegated
-        vm.prank(alice);
+        // trying to call increment on alice should succeed but not change any state
+        (bool success,) = address(alice).call(abi.encodeWithSignature("increment()"));
+        assertTrue(success, "Call should succeed but do nothing");
+
+        // verify that no state changed - counter should still be 0
+        assertEq(counter.number(), 0);
+    }
+
+    function test_anyoneCanCallDelegatedEOA() public {
+        vm.signAndAttachDelegation(address(counter), ALICE_PK);
+
+        // any user can interact with delegated EoA as if it was a contract and it changes state of delegated EoA
+        vm.prank(bob);
         Counter(address(alice)).increment();
 
-        // verify that no state changed - both counter and alice should still be 0
         assertEq(counter.number(), 0);
-        assertEq(Counter(address(alice)).number(), 0);
+        assertEq(Counter(address(alice)).number(), 1);
     }
 }
