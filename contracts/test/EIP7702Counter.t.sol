@@ -54,9 +54,11 @@ contract EIP7702CounterTest is Test {
         assertEq(counter.number(), 1);
     }
 
-    function test_eip7702DelegationIncrementEOA() public {
+    function test_setDelegation() public {
+        // EoA is just a regular EoA
         _assertIsEOA(alice);
 
+        // Now EoA have pointer to Counter contract, and when iteracting with it it will execute code of Counter but with state of EoA - so storage of Counter doesnt change
         vm.signAndAttachDelegation(address(counter), ALICE_PK);
         vm.prank(alice);
         Counter(address(alice)).increment();
@@ -65,7 +67,28 @@ contract EIP7702CounterTest is Test {
         assertEq(Counter(address(alice)).number(), 1);
 
         _assertIsNotEOA(alice);
-
         _assertCounterDelegatedToEOA(alice);
+    }
+
+    function test_removeDelegation() public {
+        // set delegation
+        vm.signAndAttachDelegation(address(counter), ALICE_PK);
+
+        _assertIsNotEOA(alice);
+        _assertCounterDelegatedToEOA(alice);
+
+        // remove delegation
+        vm.signAndAttachDelegation(address(0), ALICE_PK);
+
+        // after removing delegation, EoA is just a regular EoA
+        _assertIsEOA(alice);
+
+        // trying to call increment on alice should not change any state since it's no longer delegated
+        vm.prank(alice);
+        Counter(address(alice)).increment();
+
+        // verify that no state changed - both counter and alice should still be 0
+        assertEq(counter.number(), 0);
+        assertEq(Counter(address(alice)).number(), 0);
     }
 }
