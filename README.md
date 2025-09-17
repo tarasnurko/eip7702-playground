@@ -1,0 +1,2 @@
+- check account 2 can not call account 1 as contract while account is delegated to contract
+- check contract can accept tokens and eth
