@@ -9,4 +9,8 @@ contract Utils {
     function isTxOrigin(address addr) public view {
         require(tx.origin == addr, "Not tx.origin");
     }
+
+    function isThis(address addr) public view {
+        require(address(this) == addr, "Not address(this)");
+    }
 }

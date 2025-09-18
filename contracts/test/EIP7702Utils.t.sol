@@ -66,4 +66,20 @@ contract EIP7702UtilsTest is EIP7702TestSetup {
 
         vm.stopPrank();
     }
+
+    function test_eip7702_addressThisIsDelegatedEoAWhenCalledDirectly() public {
+        vm.signAndAttachDelegation(address(utils), ALICE_PK);
+        _assertUtilsDelegatedToEOA(alice);
+
+        vm.prank(alice, alice);
+        Utils(address(alice)).isThis(alice);
+    }
+
+    function test_eip7702_addressThisIsDelegatedEoAWhenCalledByThirdParty() public {
+        vm.signAndAttachDelegation(address(utils), ALICE_PK);
+        _assertUtilsDelegatedToEOA(alice);
+
+        vm.prank(bob, bob);
+        Utils(address(alice)).isThis(alice);
+    }
 }
