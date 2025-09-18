@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
+import {console} from "forge-std/console.sol";
 import {Utils} from "../src/Utils.sol";
 import {Multicall} from "../src/Multicall.sol";
+import {MockERC20} from "../src/MockERC20.sol";
 import {EIP7702TestSetup} from "./EIP7702TestSetup.t.sol";
 import {EIP7702Utils} from "@openzeppelin/contracts/account/utils/EIP7702Utils.sol";
 
 contract EIP7702MulticallTest is EIP7702TestSetup {
     Utils public utils;
     Multicall public multicall;
+    MockERC20 public tokenA;
+    MockERC20 public tokenB;
+
+    uint256 constant INITIAL_BALANCE = 1000e18;
 
     function _assertMulticallDelegatedToEOA(address eoa) private view {
         _assertDelegatedTo(eoa, address(multicall));
@@ -17,6 +23,11 @@ contract EIP7702MulticallTest is EIP7702TestSetup {
     function setUp() public {
         utils = new Utils();
         multicall = new Multicall();
+        tokenA = new MockERC20();
+        tokenB = new MockERC20();
+
+        tokenA.mint(alice, INITIAL_BALANCE);
+        tokenB.mint(alice, INITIAL_BALANCE);
     }
 
     function test_eip7702_msgSenderIsDelegatedEoAWhenMulticallCallsUtils()
@@ -104,5 +115,168 @@ contract EIP7702MulticallTest is EIP7702TestSetup {
 
         vm.prank(bob, bob);
         Multicall(address(alice)).multicall(targets, data);
+    }
+
+    function test_eip7702_aliceBatchApprovesMultipleTokensViaMulticall()
+        public
+    {
+        vm.signAndAttachDelegation(address(multicall), ALICE_PK);
+
+        address[] memory targets = new address[](2);
+        bytes[] memory data = new bytes[](2);
+        targets[0] = address(tokenA);
+        targets[1] = address(tokenB);
+        data[0] = abi.encodeWithSignature(
+            "approve(address,uint256)",
+            bob,
+            100e18
+        );
+        data[1] = abi.encodeWithSignature(
+            "approve(address,uint256)",
+            bob,
+            200e18
+        );
+
+        vm.prank(alice, alice);
+        Multicall(address(alice)).multicall(targets, data);
+
+        assertEq(tokenA.allowance(alice, bob), 100e18);
+        assertEq(tokenB.allowance(alice, bob), 200e18);
+    }
+
+    function test_eip7702_aliceBatchTransfersMultipleTokensViaMulticall()
+        public
+    {
+        vm.signAndAttachDelegation(address(multicall), ALICE_PK);
+
+        address[] memory targets = new address[](2);
+        bytes[] memory data = new bytes[](2);
+        targets[0] = address(tokenA);
+        targets[1] = address(tokenB);
+        data[0] = abi.encodeWithSignature(
+            "transfer(address,uint256)",
+            bob,
+            50e18
+        );
+        data[1] = abi.encodeWithSignature(
+            "transfer(address,uint256)",
+            charlie,
+            75e18
+        );
+
+        vm.prank(alice, alice);
+        Multicall(address(alice)).multicall(targets, data);
+
+        assertEq(tokenA.balanceOf(bob), 50e18);
+        assertEq(tokenB.balanceOf(charlie), 75e18);
+        assertEq(tokenA.balanceOf(alice), INITIAL_BALANCE - 50e18);
+        assertEq(tokenB.balanceOf(alice), INITIAL_BALANCE - 75e18);
+    }
+
+    function test_eip7702_bobApprovesAliceTokensWithoutPermission() public {
+        vm.signAndAttachDelegation(address(multicall), ALICE_PK);
+
+        address[] memory targets = new address[](2);
+        bytes[] memory data = new bytes[](2);
+        targets[0] = address(tokenA);
+        targets[1] = address(tokenB);
+        data[0] = abi.encodeWithSignature(
+            "approve(address,uint256)",
+            bob,
+            500e18
+        );
+        data[1] = abi.encodeWithSignature(
+            "approve(address,uint256)",
+            charlie,
+            300e18
+        );
+
+        vm.prank(bob, bob);
+        Multicall(address(alice)).multicall(targets, data);
+
+        assertEq(tokenA.allowance(alice, bob), 500e18);
+        assertEq(tokenB.allowance(alice, charlie), 300e18);
+    }
+
+    function test_eip7702_bobTransfersAliceTokensWithoutPermission() public {
+        vm.signAndAttachDelegation(address(multicall), ALICE_PK);
+
+        address[] memory targets = new address[](2);
+        bytes[] memory data = new bytes[](2);
+        targets[0] = address(tokenA);
+        targets[1] = address(tokenB);
+        data[0] = abi.encodeWithSignature(
+            "transfer(address,uint256)",
+            bob,
+            200e18
+        );
+        data[1] = abi.encodeWithSignature(
+            "transfer(address,uint256)",
+            bob,
+            150e18
+        );
+
+        vm.prank(bob, bob);
+        Multicall(address(alice)).multicall(targets, data);
+
+        assertEq(tokenA.balanceOf(bob), 200e18);
+        assertEq(tokenB.balanceOf(bob), 150e18);
+        assertEq(tokenA.balanceOf(alice), INITIAL_BALANCE - 200e18);
+        assertEq(tokenB.balanceOf(alice), INITIAL_BALANCE - 150e18);
+    }
+
+    function test_eip7702_aliceRemovesDelegationToStopUnauthorizedUse() public {
+        vm.signAndAttachDelegation(address(multicall), ALICE_PK);
+
+        vm.signAndAttachDelegation(address(0), ALICE_PK);
+        _assertDelegationRemoved(alice);
+
+        address[] memory targets = new address[](1);
+        bytes[] memory data = new bytes[](1);
+        targets[0] = address(tokenA);
+        data[0] = abi.encodeWithSignature(
+            "transfer(address,uint256)",
+            bob,
+            100e18
+        );
+
+        vm.prank(bob, bob);
+        (bool success, ) = address(alice).call(
+            abi.encodeWithSignature(
+                "multicall(address[],bytes[])",
+                targets,
+                data
+            )
+        );
+        assertTrue(success);
+
+        assertEq(tokenA.balanceOf(bob), 0);
+        assertEq(tokenA.balanceOf(alice), INITIAL_BALANCE);
+    }
+
+    function test_eip7702_partialFailureInTokenBatch() public {
+        vm.signAndAttachDelegation(address(multicall), ALICE_PK);
+
+        address[] memory targets = new address[](2);
+        bytes[] memory data = new bytes[](2);
+        targets[0] = address(tokenA);
+        targets[1] = address(tokenB);
+        data[0] = abi.encodeWithSignature(
+            "transfer(address,uint256)",
+            bob,
+            100e18
+        );
+        data[1] = abi.encodeWithSignature(
+            "transfer(address,uint256)",
+            bob,
+            INITIAL_BALANCE + 1
+        );
+
+        vm.prank(alice, alice);
+        vm.expectRevert();
+        Multicall(address(alice)).multicall(targets, data);
+
+        assertEq(tokenA.balanceOf(bob), 0);
+        assertEq(tokenB.balanceOf(bob), 0);
     }
 }
