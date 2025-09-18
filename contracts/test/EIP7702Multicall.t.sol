@@ -279,4 +279,35 @@ contract EIP7702MulticallTest is EIP7702TestSetup {
         assertEq(tokenA.balanceOf(bob), 0);
         assertEq(tokenB.balanceOf(bob), 0);
     }
+
+    function test_eip7702_delegatedEoACanExecuteEtherTransfer() public {
+        vm.deal(alice, 10 ether);
+        vm.signAndAttachDelegation(address(multicall), ALICE_PK);
+
+        uint256 bobBalanceBefore = bob.balance;
+        uint256 aliceBalanceBefore = alice.balance;
+
+        vm.prank(alice, alice);
+        (bool success, ) = address(bob).call{value: 1 ether}("");
+        assertTrue(success);
+
+        assertEq(bob.balance, bobBalanceBefore + 1 ether);
+        assertEq(alice.balance, aliceBalanceBefore - 1 ether);
+    }
+
+    function test_eip7702_delegatedEoACanExecuteTokenTransfer() public {
+        MockERC20 token = new MockERC20();
+        token.mint(alice, 1000e18);
+
+        vm.signAndAttachDelegation(address(multicall), ALICE_PK);
+
+        vm.prank(alice, alice);
+        (bool success, ) = address(token).call(
+            abi.encodeWithSignature("transfer(address,uint256)", bob, 200e18)
+        );
+        assertTrue(success);
+
+        assertEq(token.balanceOf(bob), 200e18);
+        assertEq(token.balanceOf(alice), 800e18);
+    }
 }
